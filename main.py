@@ -6,6 +6,7 @@ import re
 import os
 import postgres
 import psycopg2.errors as db_errors
+import requests
 
 from afinn import Afinn
 from fastapi import FastAPI, HTTPException
@@ -44,7 +45,8 @@ SENTIMENT_SCORER = OffensiveLanguageDetecter()
 SENTIMENT_THRESHOLD = 0
 PHONE_REGEX = r"(\+45|0045|) ?([\d ]*)"
 WHITESPACE_REGEX = r"\s+"
-
+SMS_GATEWAY_URL = "https://mm.inmobile.dk/Api/V2/Get/SendMessages"
+SMS_API_KEY = os.getenv("SMS_API_KEY")
 
 db = postgres.Postgres(
     "host={} user={} password={}".format(
@@ -75,7 +77,6 @@ app = FastAPI()
 # @root_app.get("/", response_class=HTMLResponse)
 # async def root():
 #     return HTMLResponse(INDEX_PAGE)
-
 
 
 # @app.get("/hello")
@@ -131,14 +132,13 @@ def add_number(receiver: Receiver):
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 
-
 def parse_phone_number(phone_number: str) -> str:
     """
     Parse string as phone number
     """
     phone_match = re.match(PHONE_REGEX, phone_number)[2].strip()
     digits = re.sub(WHITESPACE_REGEX, "", phone_match, flags=re.UNICODE)
-    
+
     if len(digits) == 8:
         return digits
     else:
@@ -178,5 +178,12 @@ def _persist_and_send_kram(message):
 
     # ONLY SEND IF NOT FLAGGED
     if not message.flag:
-        print("NOT FLAGGED")
-        print(message)
+        try:
+            sms_request = _get_sms_request(message)
+            requests.get(sms_request)
+        except Exception as e:
+            logging.error("Error sending: {}".format(e))
+
+
+def _get_sms_request(message):
+    return f"{SMS_GATEWAY_URL}?apiKey={SMS_API_KEY}&sendername=CoronaKram&text={message.text}&recipients=45{message.receiver}"
