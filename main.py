@@ -34,8 +34,11 @@ SMS_CHAR_LENGTH = 160
 TO_LONG_MSG_ERROR_MSG = "Message to long"
 INVALID_PHONE_NUMBER_MSG = "Invalid phone number."
 PHONE_NUMBER_EXISTS_MSG = "Phone number already registered"
-with open("static/thankyous.txt") as filehandler:
+with open("thankyous.txt") as filehandler:
     THANK_YOU_MSGS = [line.rstrip() for line in filehandler.readlines()]
+
+with open("static/index.html") as fp:
+    INDEX_PAGE = fp.read()
 
 SENTIMENT_SCORER = OffensiveLanguageDetecter()
 SENTIMENT_THRESHOLD = 0
@@ -58,33 +61,26 @@ class Receiver(BaseModel):
 
 
 class Message(BaseModel):
-    name: str
+    name: str = None
     text: str
     flag: bool = False
     receiver: str = None
 
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# app = FastAPI(openapi_prefix="/api")
+# root_app.mount("/api", app)
 
 
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    return """
-    <html>
-        <head>
-            <title>Some HTML in here</title>
-        </head>
-        <body>
-            <h1>Look ma! HTML!</h1>
-        </body>
-    </html>
-    """
+# @root_app.get("/", response_class=HTMLResponse)
+# async def root():
+#     return HTMLResponse(INDEX_PAGE)
 
 
-@app.get("/hello")
-def read_root():
-    return {"Hello": "World"}
+
+# @app.get("/hello")
+# def read_root():
+#     return {"Hello": "World"}
 
 
 @app.post("/kram/")
@@ -129,6 +125,11 @@ def add_number(receiver: Receiver):
     phone_number.timestamp = timestamp
 
     return phone_number
+
+
+## NOTE: Mount the files AFTER above routes
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
 
 
 def parse_phone_number(phone_number: str) -> str:
@@ -177,4 +178,5 @@ def _persist_and_send_kram(message):
 
     # ONLY SEND IF NOT FLAGGED
     if not message.flag:
-        ... send
+        print("NOT FLAGGED")
+        print(message)
