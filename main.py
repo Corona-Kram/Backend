@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from spacy.lang.da import Danish
 
+import logging
 
 class OffensiveLanguageDetecter:
     def __init__(self):
@@ -30,20 +31,17 @@ with open("static/thankyous.txt") as filehandler:
     THANK_YOU_MSGS = [line.rstrip() for line in filehandler.readlines()]
 
 SENTIMENT_SCORER = OffensiveLanguageDetecter()
-SENTIMENT_THRESHOLD = 1
+SENTIMENT_THRESHOLD = 0
 
 
 class Message(BaseModel):
     name: str
     text: str
-    timestamp: int = None
+    flag: bool = False
 
 
 class Receiver(BaseModel):
-    name: str
     phone_number: str
-    timestamp: int = None
-
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -74,10 +72,9 @@ def kram(message: Message):
     if not message.text or len(message.text) > SMS_CHAR_LENGTH:
         raise HTTPException(status_code=442, detail=TO_LONG_MSG_ERROR_MSG)
 
-    # only accept message full of happy words
+    # flag messages with bad scores
     msg_score = _score_message(message, SENTIMENT_THRESHOLD)
-    if msg_score < SENTIMENT_THRESHOLD:
-        raise HTTPException(status_code=442, detail="Nope. Not positive enough.")
+    message.flag = msg_score < SENTIMENT_THRESHOLD
 
     # save it / send it off
     success = _persist_and_send_kram(message)
@@ -98,7 +95,7 @@ def add_number(phone_number: Receiver):
     try:
         phone_number = parse_phone_number(phone_number)
     except:
-        raise HTTPException(status_code=442, detail=TO_LONG_MSG_ERROR_MSG)
+        raise HTTPException(status_code=442, detail=INVALID_PHONE_NUMBER_MSG)
 
     # persist name and phone number
     timestamp = persist_phone_number(phone_number)
@@ -139,5 +136,4 @@ def _score_message(message: Message, threshold: int):
 
 
 def _persist_and_send_kram(message):
-    # database stuff
-    return True
+    

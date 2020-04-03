@@ -1,6 +1,6 @@
 FROM python:slim 
 
-RUN pip install aiofiles uvicorn fastapi psycopg2-binary postgres
+RUN pip install aiofiles uvicorn fastapi psycopg2-binary postgres afinn spacy
 
 ADD . .
 
