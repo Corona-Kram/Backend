@@ -9,7 +9,7 @@ from pydantic import BaseModel
 SMS_CHAR_LENGTH = 160
 TO_LONG_MSG_ERROR_MSG = "Message to long"
 INVALID_PHONE_NUMBER_MSG = "Invalid phone number."
-with open("thankyous.txt") as filehandler:
+with open("static/thankyous.txt") as filehandler:
     THANK_YOU_MSGS = [line.rstrip() for line in filehandler.readlines()]
 
 
