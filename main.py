@@ -74,10 +74,6 @@ app = FastAPI()
 # root_app.mount("/api", app)
 
 
-# @root_app.get("/", response_class=HTMLResponse)
-# async def root():
-#     return HTMLResponse(INDEX_PAGE)
-
 
 # @app.get("/hello")
 # def read_root():
@@ -90,21 +86,24 @@ def kram(message: Message):
     if not message.text or len(message.text) > SMS_CHAR_LENGTH:
         raise HTTPException(status_code=442, detail=TO_LONG_MSG_ERROR_MSG)
 
-    # flag messages with bad scores
-    msg_score = _score_message(message, SENTIMENT_THRESHOLD)
-    message.flag = msg_score < SENTIMENT_THRESHOLD
+    try:
+        # flag messages with bad scores
+        msg_score = _score_message(message, SENTIMENT_THRESHOLD)
+        message.flag = msg_score < SENTIMENT_THRESHOLD
 
-    # save it / send it off
-    success = _persist_and_send_kram(message)
-    if not success:
-        raise HTTPException(status_code=500, detail="Database error")
+        # save it / send it off
+        success = _persist_and_send_kram(message)
+        if not success:
+            raise HTTPException(status_code=500, detail="Database error")
 
-    return {
-        "message": message.text,
-        "len": len(message.text),
-        "sentiment_score": msg_score,
-        "thank_you_msg": random.choice(THANK_YOU_MSGS),
-    }
+        return {
+            "message": message.text,
+            "len": len(message.text),
+            "sentiment_score": msg_score,
+            "thank_you_msg": random.choice(THANK_YOU_MSGS),
+        }
+    except Exception as e:
+        print(e)
 
 
 @app.post("/add_number/")
@@ -123,9 +122,9 @@ def add_number(receiver: Receiver):
     except db_errors.UniqueViolation:
         raise HTTPException(status_code=409, detail=PHONE_NUMBER_EXISTS_MSG)
 
-    phone_number.timestamp = timestamp
+    receiver.timestamp = timestamp
 
-    return phone_number
+    return receiver
 
 
 ## NOTE: Mount the files AFTER above routes
@@ -181,8 +180,13 @@ def _persist_and_send_kram(message):
         try:
             sms_request = _get_sms_request(message)
             requests.get(sms_request)
+            return True
         except Exception as e:
             logging.error("Error sending: {}".format(e))
+            return False
+    else:
+        # Return True if the message was flagged; user should not be notified
+        return True
 
 
 def _get_sms_request(message):
