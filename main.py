@@ -121,6 +121,10 @@ def kram(message: Message):
     except Exception as e:
         logging.error(e)
 
+@app.get("/count/")
+def get_count():
+    return db.one("SELECT COUNT(*) FROM message")
+
 @app.get("/kram/{past_seconds}")
 def get_kram(past_seconds: int):
     if (past_seconds < 10):
