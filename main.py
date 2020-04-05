@@ -215,12 +215,12 @@ def _persist_and_send_kram(message):
 
 
 def _sms_body(message):
-    # Truncate text to ~50 characters
-    message.text = message.text[:50]
-
     if message.name:
         content = SMS_TEMPLATE_NAMED.format(message.name, message.text)
     else:
         content = SMS_TEMPLATE_ANONYMOUS.format(message.text)
+
+    # Truncate content to ~50 characters
+    content = content[:50]
 
     return SMS_SEND_TEMPLATE.format(SMS_API_KEY, content, message.receiver)
