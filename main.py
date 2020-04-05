@@ -38,9 +38,6 @@ PHONE_NUMBER_EXISTS_MSG = "Phone number already registered"
 with open("thankyous.txt") as filehandler:
     THANK_YOU_MSGS = [line.rstrip() for line in filehandler.readlines()]
 
-with open("static/index.html") as fp:
-    INDEX_PAGE = fp.read()
-
 SENTIMENT_SCORER = OffensiveLanguageDetecter()
 SENTIMENT_THRESHOLD = 0
 PHONE_REGEX = r"(\+45|0045|) ?([\d ]*)"
@@ -48,7 +45,7 @@ WHITESPACE_REGEX = r"\s+"
 SMS_GATEWAY_URL = "https://mm.inmobile.dk/Api/V2/SendMessages"
 SMS_API_KEY = os.getenv("SMS_API_KEY")
 SMS_TEMPLATE_ANONYMOUS = "Fra CoronaKram.dk:\n{}"
-SMS_TEMPLATE_NAMED = "\n{} via CoronaKram.dk:\n{}"
+SMS_TEMPLATE_NAMED = "{} via CoronaKram.dk:\n{}"
 
 
 SMS_SEND_TEMPLATE = """<request>
@@ -83,6 +80,10 @@ class Message(BaseModel):
     text: str
     flag: bool = False
     receiver: str = None
+    time: str = None
+
+class Request(BaseModel):
+    since: str
 
 
 app = FastAPI()
@@ -120,6 +121,11 @@ def kram(message: Message):
     except Exception as e:
         logging.error(e)
 
+@app.get("/kram/{past_seconds}")
+def get_kram(past_seconds: int):
+    if (past_seconds < 10):
+        past_seconds = 10
+    return _get_messages(past_seconds)
 
 @app.post("/add_number/")
 def add_number(receiver: Receiver):
@@ -141,6 +147,17 @@ def add_number(receiver: Receiver):
 
     return receiver
 
+@app.post("/remove_number/")
+def remove_number(receiver: Receiver):
+    # validate phone number
+    try:
+        phone_number = parse_phone_number(receiver.phone_number)
+    except Exception as e:
+        raise HTTPException(status_code=442, detail=INVALID_PHONE_NUMBER_MSG)
+
+    # remove number
+    remove_phone_number(phone_number)
+
 
 ## NOTE: Mount the files AFTER above routes
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
@@ -159,10 +176,10 @@ def parse_phone_number(phone_number: str) -> str:
         raise ValueError("Error parsing phone number")
 
 
-def get_random_receiver() -> Receiver:
-    # Get a phone number from a receiver that has NOT received anything in the last 10 minutes
+def get_random_receiver() -> str:
+    # Get a phone number from a receiver that is active and has NOT received anything in the last 10 minutes
     result = db.one(
-        "SELECT phone from receivers WHERE last_sent < (now() - interval '30 minutes') ORDER BY random() LIMIT 1"
+        "SELECT phone from receivers WHERE active AND last_sent < (now() - interval '30 minutes') ORDER BY random() LIMIT 1"
     )
     # This might not produce results (None)
     if not result:
@@ -171,8 +188,11 @@ def get_random_receiver() -> Receiver:
     db.run(
         "UPDATE receivers SET last_sent = now() WHERE phone = %(phone)s", phone=result
     )
-    return Receiver(phone_number=result)
+    return result
 
+
+def remove_phone_number(phone_number):
+    return db.run("UPDATE receivers SET active = false WHERE phone = %(phone)s", phone=phone_number)
 
 def persist_phone_number(phone_number):
     return db.one(
@@ -180,6 +200,9 @@ def persist_phone_number(phone_number):
         phone=phone_number,
     )
 
+
+def _get_messages(past_seconds):
+    return db.all("SELECT name, time, text FROM message where flag = false AND time > (now() - interval '%(seconds)s seconds') ORDER BY time DESC LIMIT 100", seconds=past_seconds)
 
 def _score_message(message: Message, threshold: int):
     try:
@@ -195,10 +218,13 @@ def _persist_and_send_kram(message):
     if not message.receiver:
         message.receiver = get_random_receiver()
 
-    db.run(
-        "INSERT INTO message (name, text, receiver, flag) VALUES (%(name)s, %(text)s, %(receiver)s, %(flag)s)",
-        message.dict(),
-    )
+    try:
+        db.run(
+            "INSERT INTO message (name, text, receiver, flag) VALUES (%(name)s, %(text)s, %(receiver)s, %(flag)s)",
+            message.dict(),
+        )
+    except Exception as e:
+        logging.error("Error persisting message to database: " + str(e))
 
     # ONLY SEND IF NOT FLAGGED AND HAS A RECEIVER
     if not message.flag and message.receiver:
@@ -220,7 +246,7 @@ def _sms_body(message):
     else:
         content = SMS_TEMPLATE_ANONYMOUS.format(message.text)
 
-    # Truncate content to ~50 characters
-    content = content[:50]
+    # Truncate content to ~70 characters
+    content = content[:70]
 
     return SMS_SEND_TEMPLATE.format(SMS_API_KEY, content, message.receiver)
