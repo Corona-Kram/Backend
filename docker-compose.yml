@@ -18,6 +18,7 @@ services:
     environment: 
       - DB_PASSWORD=${DB_PASSWORD}
       - SMS_API_KEY=${SMS_API_KEY}
+    restart: on-failure
     ports:
       - target: 80
         published: 3555
