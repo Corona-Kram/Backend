@@ -1,6 +1,7 @@
 CREATE TABLE receivers(
     phone VARCHAR(50) PRIMARY KEY,
-    time timestamp default now()
+    time timestamp default now(),
+    last_sent timestamp default to_timestamp(0)
 );
 CREATE INDEX receivers_phone_idx ON receivers (phone);
 

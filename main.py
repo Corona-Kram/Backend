@@ -74,7 +74,6 @@ app = FastAPI()
 # root_app.mount("/api", app)
 
 
-
 # @app.get("/hello")
 # def read_root():
 #     return {"Hello": "World"}
@@ -145,7 +144,15 @@ def parse_phone_number(phone_number: str) -> str:
 
 
 def get_random_receiver() -> Receiver:
-    result = db.one("SELECT phone from receivers ORDER BY random() LIMIT 1")
+    # Get a phone number from a receiver that has NOT received anything in the last 10 minutes
+    result = db.one(
+        "SELECT phone from receivers WHERE last_sent < (now() - interval '30 minutes') ORDER BY random() LIMIT 1"
+    )
+    # This might not produce results (None)
+    if not result:
+        return result
+    # Update sent timestamp
+    db.run("UPDATE phone SET last_sent = now() WHERE phone = %(phone)s", phone=result)
     return Receiver(phone_number=result)
 
 
@@ -175,8 +182,8 @@ def _persist_and_send_kram(message):
         message.dict(),
     )
 
-    # ONLY SEND IF NOT FLAGGED
-    if not message.flag:
+    # ONLY SEND IF NOT FLAGGED AND HAS A RECEIVER
+    if not message.flag and message.receiver:
         try:
             sms_request = _get_sms_request(message)
             requests.get(sms_request)
