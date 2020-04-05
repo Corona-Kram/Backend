@@ -45,8 +45,24 @@ SENTIMENT_SCORER = OffensiveLanguageDetecter()
 SENTIMENT_THRESHOLD = 0
 PHONE_REGEX = r"(\+45|0045|) ?([\d ]*)"
 WHITESPACE_REGEX = r"\s+"
-SMS_GATEWAY_URL = "https://mm.inmobile.dk/Api/V2/Get/SendMessages"
+SMS_GATEWAY_URL = "https://mm.inmobile.dk/Api/V2/SendMessages"
 SMS_API_KEY = os.getenv("SMS_API_KEY")
+SMS_TEMPLATE_ANONYMOUS = "Fra CoronaKram.dk:\n{}"
+SMS_TEMPLATE_NAMED = "\n{} via CoronaKram.dk:\n{}"
+
+
+SMS_SEND_TEMPLATE = """<request>
+    <authentication apikey="{}" />
+    <data>
+        <message>
+            <sendername>CoronaKram</sendername>
+            <text encoding="utf-8"><![CDATA[{}]]></text>
+            <recipients>
+                <msisdn>45{}</msisdn>
+            </recipients>
+        </message>
+    </data>
+</request>"""
 
 db = postgres.Postgres(
     "host={} user={} password={}".format(
@@ -102,7 +118,7 @@ def kram(message: Message):
             "thank_you_msg": random.choice(THANK_YOU_MSGS),
         }
     except Exception as e:
-        print(e)
+        logging.error(e)
 
 
 @app.post("/add_number/")
@@ -152,7 +168,9 @@ def get_random_receiver() -> Receiver:
     if not result:
         return result
     # Update sent timestamp
-    db.run("UPDATE phone SET last_sent = now() WHERE phone = %(phone)s", phone=result)
+    db.run(
+        "UPDATE receivers SET last_sent = now() WHERE phone = %(phone)s", phone=result
+    )
     return Receiver(phone_number=result)
 
 
@@ -175,7 +193,7 @@ def _score_message(message: Message, threshold: int):
 
 def _persist_and_send_kram(message):
     if not message.receiver:
-        message.receiver = get_random_receiver().phone_number
+        message.receiver = get_random_receiver()
 
     db.run(
         "INSERT INTO message (name, text, receiver, flag) VALUES (%(name)s, %(text)s, %(receiver)s, %(flag)s)",
@@ -185,8 +203,8 @@ def _persist_and_send_kram(message):
     # ONLY SEND IF NOT FLAGGED AND HAS A RECEIVER
     if not message.flag and message.receiver:
         try:
-            sms_request = _get_sms_request(message)
-            requests.get(sms_request)
+            sms_body = _sms_body(message)
+            requests.post(SMS_GATEWAY_URL, data={"xml": sms_body})
             return True
         except Exception as e:
             logging.error("Error sending: {}".format(e))
@@ -196,5 +214,13 @@ def _persist_and_send_kram(message):
         return True
 
 
-def _get_sms_request(message):
-    return f"{SMS_GATEWAY_URL}?apiKey={SMS_API_KEY}&sendername=CoronaKram&text={message.text}&recipients=45{message.receiver}"
+def _sms_body(message):
+    # Truncate text to ~50 characters
+    message.text = message.text[:50]
+
+    if message.name:
+        content = SMS_TEMPLATE_NAMED.format(message.name, message.text)
+    else:
+        content = SMS_TEMPLATE_ANONYMOUS.format(message.text)
+
+    return SMS_SEND_TEMPLATE.format(SMS_API_KEY, content, message.receiver)
