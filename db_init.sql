@@ -10,7 +10,7 @@ CREATE TABLE message(
     id serial PRIMARY KEY,
     name name,
     text text,
-    receiver VARCHAR(50) REFERENCES receivers(phone),
+    receiver VARCHAR(50),
     time timestamp default now(),
     flag boolean
 );
